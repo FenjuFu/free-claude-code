@@ -1,0 +1,66 @@
+name: Token Plan Windows comparison
+
+env:
+  CI_UV_VERSION: "0.12.13"
+  UV_MALWARE_CHECK: "1"
+  UV_PREVIEW_FEATURES: "malware-check"
+
+on:
+  push:
+    branches:
+      - ci/iflytek-token-plan-windows-2026-10-13
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: playwright (Windows ${{ matrix.scope }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Windows
+            runner: windows-latest
+            scope: candidate
+            ref: b443b717c3a02b3640cbc4aa21b0bcbe4b13c791
+          - os: Windows
+            runner: windows-latest
+            scope: latest-main
+            ref: 4e99ddaa5cf453d4ef22fae7c17f7f3aacc3c52b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ matrix.ref }}
+          repository: FenjuFu/free-claude-code
+          fetch-depth: 0
+
+      - name: Set up CI environment
+        uses: ./.github/actions/ci-environment
+        with:
+          uv-version: ${{ env.CI_UV_VERSION }}
+          runner-label: ${{ matrix.runner }}
+
+      - name: Install Chromium
+        run: uv run --locked playwright install --only-shell ${{ matrix.os == 'Linux' && '--with-deps chromium' || 'chromium' }}
+
+      - name: Run Playwright
+        run: >-
+          uv run --locked pytest e2e -v --tb=short
+          -o thread_dump_timeout=10 --durations=20
+          --tracing=retain-on-failure --screenshot=only-on-failure
+          --full-page-screenshot --output=test-results
+
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: playwright-results-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
